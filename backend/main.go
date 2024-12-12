@@ -11,12 +11,21 @@ import (
 	"syscall"
 	"time"
 
+	"dabba-stats/docs"
+
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/mem"
 	"github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
+	httpSwagger "github.com/swaggo/http-swagger"
 )
+
+// @title System Monitor API
+// @version 1.0
+// @description API for monitoring system resources and processes
+// @host localhost:3000
+// @BasePath /api
 
 // Constants
 const (
@@ -24,19 +33,23 @@ const (
 	apiPrefix   = "/api"
 )
 
+// SystemStats represents system resource usage statistics
+// @Description System resource usage statistics including CPU, memory, disk, network, and processes
 type SystemStats struct {
-	CPUUsage   float64       `json:"cpuUsage"`
-	MemUsage   float64       `json:"memUsage"`
-	DiskUsage  float64       `json:"diskUsage"`
-	NetTraffic int64         `json:"netTraffic"`
+	CPUUsage   float64       `json:"cpuUsage" example:"45.2"`
+	MemUsage   float64       `json:"memUsage" example:"60.5"`
+	DiskUsage  float64       `json:"diskUsage" example:"75.0"`
+	NetTraffic int64         `json:"netTraffic" example:"1048576"`
 	Processes  []ProcessInfo `json:"processes"`
 }
 
+// ProcessInfo represents information about a single process
+// @Description Information about a single system process
 type ProcessInfo struct {
-	PID         int32   `json:"pid"`
-	Name        string  `json:"name"`
-	CPUPercent  float64 `json:"cpuPercent"`
-	MemoryUsage float32 `json:"memoryUsage"` // in MB
+	PID         int32   `json:"pid" example:"1234"`
+	Name        string  `json:"name" example:"chrome"`
+	CPUPercent  float64 `json:"cpuPercent" example:"5.5"`
+	MemoryUsage float32 `json:"memoryUsage" example:"256.5"` // in MB
 }
 
 // Server represents our HTTP server
@@ -61,6 +74,11 @@ func (s *Server) setupRoutes() {
 	// Serve frontend build files
 	fs := http.FileServer(http.Dir("../frontend/dist"))
 	s.router.Handle("/", fs)
+
+	// Swagger documentation
+	s.router.Handle("/swagger/", httpSwagger.Handler(
+		httpSwagger.URL("/swagger/doc.json"),
+	))
 
 	// API endpoints
 	s.router.HandleFunc(apiPrefix+"/stats", s.statsHandler)
@@ -174,7 +192,14 @@ func getStats() (*SystemStats, error) {
 	return stats, nil
 }
 
-// Convert the handlers to methods on Server
+// statsHandler godoc
+// @Summary Get current system statistics
+// @Description Returns current CPU, memory, disk usage, network traffic, and process information
+// @Tags stats
+// @Produce json
+// @Success 200 {object} SystemStats
+// @Failure 500 {string} string "Internal Server Error"
+// @Router /stats [get]
 func (s *Server) statsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -193,6 +218,14 @@ func (s *Server) statsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// sseHandler godoc
+// @Summary Get real-time system statistics
+// @Description Provides Server-Sent Events (SSE) stream of system statistics
+// @Tags stats
+// @Produce text/event-stream
+// @Success 200 {string} string "SSE stream of SystemStats"
+// @Failure 500 {string} string "Internal Server Error"
+// @Router /events [get]
 func (s *Server) sseHandler(w http.ResponseWriter, r *http.Request) {
 	// Set headers for SSE
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -227,6 +260,14 @@ func (s *Server) sseHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	// Initialize Swagger docs
+	docs.SwaggerInfo.Title = "System Monitor API"
+	docs.SwaggerInfo.Description = "API for monitoring system resources and processes"
+	docs.SwaggerInfo.Version = "1.0"
+	docs.SwaggerInfo.Host = "localhost:3000"
+	docs.SwaggerInfo.BasePath = "/api"
+	docs.SwaggerInfo.Schemes = []string{"http"}
+
 	// Create and start server
 	server := NewServer(os.Getenv("PORT"))
 	server.setupRoutes()

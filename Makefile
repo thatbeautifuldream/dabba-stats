@@ -69,3 +69,8 @@ dev:
 	@which air > /dev/null || go install github.com/cosmtrek/air@latest
 	@cd $(FRONTEND_PATH) && pnpm install && pnpm run dev & 
 	@cd $(BACKEND_PATH) && air
+
+# Generate Swagger documentation
+docs:
+	@echo "Generating Swagger documentation..."
+	@cd $(BACKEND_PATH) && swag init
