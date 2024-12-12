@@ -11,47 +11,61 @@ BINARY_NAME=system-monitor
 # Build directory
 BUILD_DIR=build
 
-# Main entry point
-MAIN_PATH=./backend
+# Main paths
+BACKEND_PATH=./backend
+FRONTEND_PATH=./frontend
 
-.PHONY: all build clean run test deps tidy
+.PHONY: all build clean run test deps tidy dev frontend-build backend-build
 
 all: clean build
 
-# Build the application
-build:
-	@echo "Building..."
+# Build both frontend and backend
+build: frontend-build backend-build
+
+# Build frontend
+frontend-build:
+	@echo "Building frontend..."
+	@cd $(FRONTEND_PATH) && pnpm install && pnpm run build
+
+# Build backend
+backend-build:
+	@echo "Building backend..."
 	@mkdir -p $(BUILD_DIR)
-	@cd $(MAIN_PATH) && $(GOBUILD) -o ../$(BUILD_DIR)/$(BINARY_NAME) -v
+	@cd $(BACKEND_PATH) && $(GOBUILD) -o ../$(BUILD_DIR)/$(BINARY_NAME) -v
 
 # Clean build artifacts
 clean:
 	@echo "Cleaning..."
 	@rm -rf $(BUILD_DIR)
+	@cd $(FRONTEND_PATH) && rm -rf dist
 	@$(GOCLEAN)
 
-# Run the application
-run:
+# Run the application (builds frontend first)
+run: frontend-build
 	@echo "Running..."
-	@cd $(MAIN_PATH) && $(GORUN) main.go
+	@cd $(BACKEND_PATH) && $(GORUN) main.go
 
 # Run tests
 test:
 	@echo "Running tests..."
-	@cd $(MAIN_PATH) && $(GOTEST) -v ./...
+	@cd $(BACKEND_PATH) && $(GOTEST) -v ./...
+	@cd $(FRONTEND_PATH) && pnpm test
 
 # Download dependencies
 deps:
 	@echo "Downloading dependencies..."
-	@cd $(MAIN_PATH) && $(GOGET) ./...
+	@cd $(BACKEND_PATH) && $(GOGET) ./...
+	@cd $(FRONTEND_PATH) && pnpm install
 
 # Tidy up dependencies
 tidy:
 	@echo "Tidying up modules..."
-	@cd $(MAIN_PATH) && $(GOMOD) tidy
+	@cd $(BACKEND_PATH) && $(GOMOD) tidy
+	@cd $(FRONTEND_PATH) && pnpm install
 
 # Development with hot reload (requires air)
 dev:
 	@echo "Starting development server..."
 	@which air > /dev/null || go install github.com/cosmtrek/air@latest
-	@cd $(MAIN_PATH) && air 
+	@cd $(FRONTEND_PATH) && pnpm install && pnpm run dev & 
+	@cd $(BACKEND_PATH) && air
