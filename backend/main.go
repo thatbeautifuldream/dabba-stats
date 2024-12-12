@@ -31,6 +31,7 @@ import (
 const (
 	defaultPort = "3000"
 	apiPrefix   = "/api"
+	defaultStaticDir = "../frontend/dist" // Default static files directory
 )
 
 // SystemStats represents system resource usage statistics
@@ -54,8 +55,9 @@ type ProcessInfo struct {
 
 // Server represents our HTTP server
 type Server struct {
-	router *http.ServeMux
-	port   string
+	router    *http.ServeMux
+	port      string
+	staticDir string
 }
 
 // NewServer creates a new server instance
@@ -63,16 +65,23 @@ func NewServer(port string) *Server {
 	if port == "" {
 		port = defaultPort
 	}
+
+	staticDir := os.Getenv("STATIC_DIR")
+	if staticDir == "" {
+		staticDir = defaultStaticDir
+	}
+
 	return &Server{
-		router: http.NewServeMux(),
-		port:   port,
+		router:    http.NewServeMux(),
+		port:      port,
+		staticDir: staticDir,
 	}
 }
 
 // setupRoutes configures all the routes for the server
 func (s *Server) setupRoutes() {
 	// Serve frontend build files
-	fs := http.FileServer(http.Dir("../frontend/dist"))
+	fs := http.FileServer(http.Dir(s.staticDir))
 	s.router.Handle("/", fs)
 
 	// Swagger documentation
