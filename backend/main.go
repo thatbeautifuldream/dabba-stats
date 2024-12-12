@@ -156,8 +156,8 @@ func sseHandler(w http.ResponseWriter, r *http.Request) {
 func main() {
 	router := http.NewServeMux()
 	
-	// Serve static files
-	fs := http.FileServer(http.Dir("static"))
+	// Serve frontend build files
+	fs := http.FileServer(http.Dir("../frontend/dist"))
 	router.Handle("/", fs)
 	
 	// API endpoints
