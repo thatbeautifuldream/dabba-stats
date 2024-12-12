@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/shirou/gopsutil/v3/cpu"
@@ -12,6 +16,12 @@ import (
 	"github.com/shirou/gopsutil/v3/mem"
 	"github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
+)
+
+// Constants
+const (
+	defaultPort = "3000"
+	apiPrefix   = "/api"
 )
 
 type SystemStats struct {
@@ -27,6 +37,68 @@ type ProcessInfo struct {
 	Name        string  `json:"name"`
 	CPUPercent  float64 `json:"cpuPercent"`
 	MemoryUsage float32 `json:"memoryUsage"` // in MB
+}
+
+// Server represents our HTTP server
+type Server struct {
+	router *http.ServeMux
+	port   string
+}
+
+// NewServer creates a new server instance
+func NewServer(port string) *Server {
+	if port == "" {
+		port = defaultPort
+	}
+	return &Server{
+		router: http.NewServeMux(),
+		port:   port,
+	}
+}
+
+// setupRoutes configures all the routes for the server
+func (s *Server) setupRoutes() {
+	// Serve frontend build files
+	fs := http.FileServer(http.Dir("../frontend/dist"))
+	s.router.Handle("/", fs)
+
+	// API endpoints
+	s.router.HandleFunc(apiPrefix+"/stats", s.statsHandler)
+	s.router.HandleFunc(apiPrefix+"/events", s.sseHandler)
+}
+
+// Start starts the server and handles graceful shutdown
+func (s *Server) Start() error {
+	server := &http.Server{
+		Addr:         ":" + s.port,
+		Handler:      s.router,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// Channel for shutdown signals
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
+	// Channel for server errors
+	errChan := make(chan error, 1)
+
+	go func() {
+		log.Printf("Server running at http://localhost:%s\n", s.port)
+		errChan <- server.ListenAndServe()
+	}()
+
+	// Wait for shutdown signal or error
+	select {
+	case <-stop:
+		log.Println("Shutting down server...")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return server.Shutdown(ctx)
+	case err := <-errChan:
+		return fmt.Errorf("server error: %w", err)
+	}
 }
 
 // Fetch system and process stats
@@ -102,8 +174,8 @@ func getStats() (*SystemStats, error) {
 	return stats, nil
 }
 
-// HTTP handler for GET /api/stats
-func statsHandler(w http.ResponseWriter, r *http.Request) {
+// Convert the handlers to methods on Server
+func (s *Server) statsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -111,16 +183,17 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
 
 	stats, err := getStats()
 	if err != nil {
-		http.Error(w, "Error fetching stats", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(stats)
+	if err := json.NewEncoder(w).Encode(stats); err != nil {
+		log.Printf("Error encoding response: %v", err)
+	}
 }
 
-// SSE handler for /events
-func sseHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) sseHandler(w http.ResponseWriter, r *http.Request) {
 	// Set headers for SSE
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -154,17 +227,12 @@ func sseHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	router := http.NewServeMux()
+	// Create and start server
+	server := NewServer(os.Getenv("PORT"))
+	server.setupRoutes()
 	
-	// Serve frontend build files
-	fs := http.FileServer(http.Dir("../frontend/dist"))
-	router.Handle("/", fs)
-	
-	// API endpoints
-	router.HandleFunc("/api/stats", statsHandler)
-	router.HandleFunc("/api/events", sseHandler)
-
-	fmt.Println("Server running at http://localhost:3000")
-	log.Fatal(http.ListenAndServe(":3000", router))
+	if err := server.Start(); err != nil {
+		log.Fatal(err)
+	}
 }
 	
